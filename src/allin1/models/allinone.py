@@ -252,7 +252,9 @@ class Head(nn.Module):
     Initialization following:
     "Focal loss for dense object detection." ICCV. 2017.
     """
-    self.classifier.bias.data.fill_(-torch.log(torch.tensor(1 / confidence - 1)))
+    with torch.no_grad():
+      bias_value = -torch.log(torch.tensor(1 / confidence - 1))
+      self.classifier.bias.fill_(bias_value)
 
   def forward(self, x: torch.FloatTensor):
     # x shape: N, K, T, C=24

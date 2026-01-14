@@ -56,6 +56,14 @@ class AllInOneTrainer(LightningModule):
       'optimizer': optimizer,
     }
 
+  def _get_checkpoint_callback(self):
+    """Get the ModelCheckpoint callback from trainer callbacks."""
+    from lightning.pytorch.callbacks import ModelCheckpoint
+    for callback in self.trainer.callbacks:
+      if isinstance(callback, ModelCheckpoint):
+        return callback
+    return None
+
   def on_train_epoch_end(self) -> None:
     if self.cfg.sanity_check:
       return
@@ -70,9 +78,15 @@ class AllInOneTrainer(LightningModule):
 
         new_lr = optimizer.param_groups[0]['lr']
         if new_lr < old_lr:
-          print(f'=> The LR is decayed from {old_lr} to {new_lr}. '
-                f'Loading the best model: {self.cfg.eval_metric}={self.trainer.checkpoint_callback.best_model_score}')
-          self.load_from_checkpoint(self.trainer.checkpoint_callback.best_model_path, cfg=self.cfg)
+          ckpt_callback = self._get_checkpoint_callback()
+          if ckpt_callback is not None and ckpt_callback.best_model_path:
+            print(f'=> The LR is decayed from {old_lr} to {new_lr}. '
+                  f'Loading the best model: {self.cfg.eval_metric}={ckpt_callback.best_model_score}')
+            # Load best model weights into current model
+            best_model = AllInOneTrainer.load_from_checkpoint(
+              ckpt_callback.best_model_path, cfg=self.cfg
+            )
+            self.load_state_dict(best_model.state_dict())
       elif self.current_epoch + 1 <= self.cfg.warmup_epochs:
         self.scheduler.step(epoch=self.current_epoch + 1)
     else:
@@ -294,9 +308,13 @@ class AllInOneTrainer(LightningModule):
 
   def on_fit_end(self):
     print('=> Fit ended.')
-    if self.trainer.is_global_zero and self.trainer.checkpoint_callback.best_model_path:
+    ckpt_callback = self._get_checkpoint_callback()
+    if self.trainer.is_global_zero and ckpt_callback is not None and ckpt_callback.best_model_path:
       print('=> Loading best model...')
-      self.load_from_checkpoint(self.trainer.checkpoint_callback.best_model_path, cfg=self.cfg)
+      best_model = AllInOneTrainer.load_from_checkpoint(
+        ckpt_callback.best_model_path, cfg=self.cfg
+      )
+      self.load_state_dict(best_model.state_dict())
       print('=> Loaded best model.')
 
 
