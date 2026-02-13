@@ -7,6 +7,20 @@ from .allinone import AllInOne
 from .ensemble import Ensemble
 from ..typings import PathLike
 
+
+def _migrate_checkpoint(state_dict: dict) -> tuple:
+    """
+    Remove RPB parameters from old checkpoints.
+    Returns lists of removed and missing keys.
+    """
+    rpb_keys = [k for k in state_dict.keys() if 'rpb' in k.lower()]
+    
+    for key in rpb_keys:
+        del state_dict[key]
+    
+    return rpb_keys, []
+
+
 NAME_TO_FILE = {
   'harmonix-fold0': 'harmonix-fold0-0vra4ys2.pth',
   'harmonix-fold1': 'harmonix-fold1-3ozjhtsj.pth',
@@ -56,7 +70,15 @@ def load_pretrained_model(
   config = OmegaConf.create(checkpoint['config'])
 
   model = AllInOne(config).to(device)
-  model.load_state_dict(checkpoint['state_dict'])
+
+  rpb_keys, _ = _migrate_checkpoint(checkpoint['state_dict'])
+  result = model.load_state_dict(checkpoint['state_dict'], strict=False)
+
+  if rpb_keys:
+    print(f"Warning: Removed RPB parameters from checkpoint: {len(rpb_keys)} keys")
+    print("This model was trained with NATTEN 0.17.x.")
+    print("For best results, retrain with NATTEN 0.20.x.")
+
   model.eval()
 
   return model

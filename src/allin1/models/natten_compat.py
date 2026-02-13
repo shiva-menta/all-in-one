@@ -1,62 +1,83 @@
 """
-NATTEN compatibility layer for supporting both old (0.17.x) and new (>=0.20) API versions.
+NATTEN 0.20.x compatibility layer for fused neighborhood attention.
 
-The old API has signature: natten1dqkrpb(query, key, rpb, kernel_size, dilation)
-The new API has signature: na1d_qk(query, key, kernel_size, dilation, rpb=rpb)
-
-This module provides wrapper functions that accept the new-style keyword rpb argument
-and dispatch to the appropriate underlying implementation.
+NATTEN 0.20+ uses fused operations (na1d, na2d) with heads-last layout.
+RPB is no longer supported - models must be retrained.
 """
-
-_NATTEN_NEW_API = False
+import torch
+from typing import Optional
 
 try:
-    # Try old API first (natten < 0.20)
-    from natten.functional import natten1dqkrpb as _na1d_qk_old
-    from natten.functional import natten1dav as _na1d_av_old
-    from natten.functional import natten2dqkrpb as _na2d_qk_old
-    from natten.functional import natten2dav as _na2d_av_old
-    NATTEN_VERSION = "old"
+    from natten import na1d as _na1d
+    from natten import na2d as _na2d
+    NATTEN_AVAILABLE = True
+    NATTEN_VERSION = "0.20+"
 except ImportError:
-    # New API (natten >= 0.20)
-    from natten.functional import na1d_qk as _na1d_qk_new
-    from natten.functional import na1d_av as _na1d_av_new
-    from natten.functional import na2d_qk as _na2d_qk_new
-    from natten.functional import na2d_av as _na2d_av_new
-    _NATTEN_NEW_API = True
-    NATTEN_VERSION = "new"
+    NATTEN_AVAILABLE = False
+    NATTEN_VERSION = None
 
 
-def na1d_qk(query, key, kernel_size, dilation, *, rpb=None):
-    """1D neighborhood attention query-key computation with RPB support."""
-    if _NATTEN_NEW_API:
-        return _na1d_qk_new(query, key, kernel_size, dilation, rpb=rpb)
-    else:
-        return _na1d_qk_old(query, key, rpb, kernel_size, dilation)
+def check_natten_available():
+    if not NATTEN_AVAILABLE:
+        raise ImportError(
+            "NATTEN >= 0.20.0 is required. "
+            "Install with: pip install natten>=0.20.0 "
+            "or visit https://natten.org/install/"
+        )
 
 
-def na1d_av(attn, value, kernel_size, dilation):
-    """1D neighborhood attention attention-value computation."""
-    if _NATTEN_NEW_API:
-        return _na1d_av_new(attn, value, kernel_size, dilation)
-    else:
-        return _na1d_av_old(attn, value, kernel_size, dilation)
+def fused_na1d(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    kernel_size: int,
+    dilation: int = 1,
+) -> torch.Tensor:
+    """
+    Fused 1D neighborhood attention.
+    
+    Args:
+        query: [B, T, H, D] - heads last layout
+        key: [B, T, H, D]
+        value: [B, T, H, D]
+        kernel_size: int - neighborhood window size
+        dilation: int - dilation factor (default: 1)
+    
+    Returns:
+        output: [B, T, H, D] - same layout as input
+    """
+    check_natten_available()
+    return _na1d(query, key, value, kernel_size=kernel_size, dilation=dilation)
 
 
-def na2d_qk(query, key, kernel_size, dilation, *, rpb=None):
-    """2D neighborhood attention query-key computation with RPB support."""
-    if _NATTEN_NEW_API:
-        return _na2d_qk_new(query, key, kernel_size, dilation, rpb=rpb)
-    else:
-        return _na2d_qk_old(query, key, rpb, kernel_size, dilation)
+def fused_na2d(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    kernel_size: int,
+    dilation: int = 1,
+) -> torch.Tensor:
+    """
+    Fused 2D neighborhood attention.
+    
+    Args:
+        query: [B, H, W, heads, D] - heads last layout
+        key: [B, H, W, heads, D]
+        value: [B, H, W, heads, D]
+        kernel_size: int - neighborhood window size
+        dilation: int - dilation factor (default: 1)
+    
+    Returns:
+        output: [B, H, W, heads, D] - same layout as input
+    """
+    check_natten_available()
+    return _na2d(query, key, value, kernel_size=kernel_size, dilation=dilation)
 
 
-def na2d_av(attn, value, kernel_size, dilation):
-    """2D neighborhood attention attention-value computation."""
-    if _NATTEN_NEW_API:
-        return _na2d_av_new(attn, value, kernel_size, dilation)
-    else:
-        return _na2d_av_old(attn, value, kernel_size, dilation)
-
-
-__all__ = ["na1d_qk", "na1d_av", "na2d_qk", "na2d_av", "NATTEN_VERSION"]
+__all__ = [
+    "fused_na1d",
+    "fused_na2d",
+    "check_natten_available",
+    "NATTEN_AVAILABLE",
+    "NATTEN_VERSION",
+]

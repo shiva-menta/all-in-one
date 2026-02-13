@@ -7,7 +7,7 @@ import math
 import torch
 from abc import ABC,  abstractmethod
 from typing import Optional, Tuple, Callable
-from .natten_compat import na1d_qk, na1d_av, na2d_qk, na2d_av
+from .natten_compat import fused_na1d, fused_na2d
 from ..config import Config
 from .utils import *
 
@@ -49,10 +49,7 @@ class DinatDropPath(nn.Module):
 
 
 class _NeighborhoodAttentionNd(ABC, nn.Module):
-  # rpb is learnable relative positional biases; same concept is used Swin.
-  rpb: nn.Parameter
-  nattendqkrpb: Callable
-  nattendav: Callable
+  fused_na: Callable
   
   def __init__(
     self,
@@ -89,40 +86,32 @@ class _NeighborhoodAttentionNd(ABC, nn.Module):
     key_layer = self.transpose_for_scores(self.key(hidden_states))
     value_layer = self.transpose_for_scores(self.value(hidden_states))
     
-    # Apply the scale factor before computing attention weights. It's usually more efficient because
-    # attention weights are typically a bigger tensor compared to query.
-    # It gives identical results because scalars are commutable in matrix multiplication.
-    query_layer = query_layer / math.sqrt(self.attention_head_size)
+    context_layer = self.fused_na(
+      query_layer, key_layer, value_layer,
+      self.kernel_size, self.dilation
+    )
     
-    # Compute NA between "query" and "key" to get the raw attention scores, and add relative positional biases.
-    attention_scores = self.nattendqkrpb(query_layer, key_layer, self.kernel_size, self.dilation, rpb=self.rpb)
-    
-    # Normalize the attention scores to probabilities.
-    attention_probs = nn.functional.softmax(attention_scores, dim=-1)
-    
-    # This is actually dropping out entire tokens to attend to, which might
-    # seem a bit unusual, but is taken from the original Transformer paper.
-    attention_probs = self.dropout(attention_probs)
-    
-    context_layer = self.nattendav(attention_probs, value_layer, self.kernel_size, self.dilation)
     if len(context_layer.shape) > 4:  # 2D
-      context_layer = context_layer.permute(0, 2, 3, 1, 4).contiguous()
+      context_layer = context_layer.reshape(
+        context_layer.shape[0],
+        context_layer.shape[1],
+        context_layer.shape[2],
+        -1
+      )
     else:  # 1D
-      context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-    new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-    context_layer = context_layer.view(new_context_layer_shape)
+      context_layer = context_layer.reshape(
+        context_layer.shape[0],
+        context_layer.shape[1],
+        -1
+      )
     
-    outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
-    
+    outputs = (context_layer,)
     return outputs
   
   def transpose_for_scores(self, x):
     new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
     x = x.view(new_x_shape)
-    if len(x.shape) > 4:  # 2D
-      return x.permute(0, 3, 1, 2, 4)
-    else:  # 1D
-      return x.permute(0, 2, 1, 3)
+    return x
 
 
 class NeighborhoodAttention1d(_NeighborhoodAttentionNd):
@@ -135,12 +124,7 @@ class NeighborhoodAttention1d(_NeighborhoodAttentionNd):
     dilation: int
   ):
     super().__init__(cfg, dim, num_heads, kernel_size, dilation)
-    self.rpb = nn.Parameter(
-      torch.zeros(num_heads, (2 * self.kernel_size - 1)),
-      requires_grad=True,
-    )
-    self.nattendqkrpb = na1d_qk
-    self.nattendav = na1d_av
+    self.fused_na = fused_na1d
 
 
 class NeighborhoodAttention2d(_NeighborhoodAttentionNd):
@@ -153,12 +137,7 @@ class NeighborhoodAttention2d(_NeighborhoodAttentionNd):
     dilation: int
   ):
     super().__init__(cfg, dim, num_heads, kernel_size, dilation)
-    self.rpb = nn.Parameter(
-      torch.zeros(num_heads, (2 * self.kernel_size - 1), (2 * self.kernel_size - 1)),
-      requires_grad=True,
-    )
-    self.nattendqkrpb = na2d_qk
-    self.nattendav = na2d_av
+    self.fused_na = fused_na2d
 
 
 # Copied from transformers.models.nat.modeling_nat.NeighborhoodAttentionOutput

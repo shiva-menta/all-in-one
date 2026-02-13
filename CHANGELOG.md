@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-02-13
+
+### Changed
+- **BREAKING**: Upgraded NATTEN from 0.17.x to 0.20.x
+  - Uses fused neighborhood attention operations
+  - Removed RPB (Relative Positional Bias) support
+  - Changed tensor layout to heads-last
+- **BREAKING**: Pre-trained checkpoints from v2.0.0 are incompatible
+  - Migration utility added to load old checkpoints (with warnings)
+  - Retraining required for best performance
+- Minimum PyTorch version is now 2.5.0 (required by NATTEN 0.20+)
+
+### Added
+- Checkpoint migration utility for loading old model weights
+- Support for Hopper (H100) and Blackwell (B200) GPU optimizations
+
+### Performance
+- ~1.2-1.5x faster inference with fused operations
+- Lower memory usage during training
+
 ## [2.0.0] - 2025-01-13
 
 ### Changed

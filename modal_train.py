@@ -43,7 +43,7 @@ image = (
         "torch>=2.0.0",
         "torchaudio>=2.0.0",
         # Install natten from source for CUDA support
-        "natten>=0.17.0",
+        "natten>=0.20.0",
         # Audio processing
         "librosa>=0.10.0",
         "demucs>=4.0.0",

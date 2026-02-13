@@ -36,16 +36,19 @@ This package provides models for music structure analysis, predicting:
 
 Visit [PyTorch](https://pytorch.org/) and install the appropriate version for your system.
 
-### 2. Install NATTEN (Required for Linux and Windows; macOS will auto-install)
-* **Linux**: Download from [NATTEN website](https://www.shi-labs.com/natten/)
-* **macOS**: Auto-installs with `allin1`.
-* **Windows**: Build from source:
+### 2. Install NATTEN (Required)
+NATTEN >= 0.20.0 with PyTorch >= 2.5.0 is required.
+
+* **Linux/Windows**: Install pre-built wheels from [NATTEN website](https://natten.org/install/)
+* **macOS**: Auto-installs with `allin1`
+
 ```shell
-pip install ninja # Recommended, not required
-git clone https://github.com/SHI-Labs/NATTEN
-cd NATTEN
-make
+# Example for PyTorch 2.9.0 with CUDA 12.6:
+pip install natten==0.21.5+torch290cu126 -f https://whl.natten.org
 ```
+
+**Note**: Pre-trained model weights from versions < 2.1.0 are not compatible with NATTEN 0.20+. 
+Retraining is required for best performance.
 
 ### 3. Install the package
 
